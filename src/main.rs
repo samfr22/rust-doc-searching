@@ -1,6 +1,6 @@
 use std::io;
 
-use doc_search::Hashmap;
+use doc_search::structures::Hashmap;
 
 fn main() {
     // Get user input about the number of buckets to use with the hashmap
@@ -14,7 +14,7 @@ fn main() {
 
     let num_buckets: usize = match input.trim().parse() {
         Ok(num) => num,
-        Err(_) => eprintln!("Invalid bucket input"),
+        Err(_) => panic!("Invalid bucket input"),
     };
 
     // Create the hashmap with the specified number of buckets
@@ -32,7 +32,7 @@ fn main() {
 
         let query: String = match input.trim().parse() {
             Ok(phrase) => phrase,
-            Err(_) => eprintln!("Invalid query input"),
+            Err(_) => panic!("Invalid query input"),
         };
 
         // Call the searching functions
