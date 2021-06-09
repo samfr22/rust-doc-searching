@@ -1,6 +1,6 @@
 use std::io;
 
-use doc_search::structures::Hashmap;
+use doc_search::searching;
 
 fn main() {
     // Get user input about the number of buckets to use with the hashmap

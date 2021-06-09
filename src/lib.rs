@@ -1,4 +1,4 @@
-pub mod structures {
+mod structures {
     /// The hashmap struct for the document searching module. It holds information
     ///  about the number of words and documents currently tracked as well as the
     ///  actual hashtable itself
@@ -9,6 +9,8 @@ pub mod structures {
         buckets: usize,
         /// Number of words currently in the hashmap
         words: u32,
+        /// Number of docs in use
+        pub num_docs: i32,
         /// The hashtable itself
         table: Vec<Vec<WordNode>>,
     }
@@ -20,6 +22,7 @@ pub mod structures {
             Box::new(Hashmap {
                 buckets,
                 words: 0,
+                num_docs: 0,
                 table: Vec::with_capacity(buckets),
             })
         }
@@ -101,9 +104,11 @@ pub mod structures {
             None
         }
 
-        pub fn get_doc_freq(&self, word: String) -> Option<i32> {
+        /// Get the document frequency for a given word; This represents the
+        /// number of documents that the word appears in
+        pub fn get_doc_freq(&self, word: &str) -> Option<i32> {
             // Get the hash index for the given word
-            let hashed_index = self.hash(&word);
+            let hashed_index = self.hash(&word.to_string());
 
             // Check to make sure that the list at the given index is valid
             if self.table[hashed_index][0].word.len() == 0 {
@@ -124,9 +129,11 @@ pub mod structures {
             None
         }   
 
-        pub fn get_term_freq(&self, word: String, doc: String) -> Result<i32, &'static str> { 
+        /// Gets the term frequency for a given word in a given document; This
+        /// represents the number of times that the word appears in the doc
+        pub fn get_term_freq(&self, word: &str, doc: String) -> Result<i32, &'static str> { 
             // Get the hash index for the given word
-            let hashed_index = self.hash(&word);    
+            let hashed_index = self.hash(&word.to_string());    
             
             // Iterate through the given list and try and find the word
             for node in self.table[hashed_index].iter() {
@@ -234,6 +241,94 @@ pub mod structures {
                 term_freq: 1,
             }
         }
+    }
+}
+
+pub mod searching {
+    use super::structures::Hashmap;
+
+    use std::fs::{read_dir};
+
+    /// Read a given directory of text files into the hashmap with a user
+    /// defined number of buckets for a new Hashmap
+    pub fn setup(buckets: usize) -> std::io::Result<Hashmap> {
+        // Base setup of hashmap
+        let mut map = Hashmap::new(buckets);
+
+        // For later
+        let i = 0;
+        let mut first_doc_contents = String::default();
+
+        // Iterate through the docs in the given directory
+        for doc in read_dir("./docs")? {
+            match doc {
+                Ok(entry) => {              
+                    let file_name = match entry.file_name().into_string() {
+                        Ok(str) => str,
+                        Err(_) => panic!("Couldn't convert file name into usable string"),
+                    };
+
+                    // Use the file path to open the file and save the contents
+                    //  to a string
+                    let file_contents = std::fs::read_to_string(entry.path())?;
+
+                    if i == 0 {
+                        first_doc_contents = file_contents.clone();
+                    }
+
+                    // Now can get all of the words from the string and input
+                    //  them into the hashmap
+                    let words: Vec<&str> = file_contents.rsplit(' ').collect();
+                    // Iterate through the words and add them to the hashmap
+                    for word in words.iter() {
+                        // Need to clone file_name since the document isn't
+                        // living long enough in the code to allow references
+                        map.add(word.to_string(), file_name.clone());
+                    }
+
+                    // Update number of documents in map
+                    map.num_docs += 1;
+                },
+                Err(_) => panic!("Error opening file in directory"),
+            }
+        }
+
+        // All words from all the text files have been added - now clean up 
+        //  stop words that are too common and would mess up the rankings
+
+        // For now, the simple solution is to just remove the words that are
+        //  in all the files -> Updated later
+        // Using the saved contents of the first file
+        let words: Vec<&str> = first_doc_contents.rsplit(' ').collect();
+        for word in words.iter() {
+            // Check to see what the doc frequency for this word is
+            match map.get_doc_freq(&word) {
+                Some(freq) => {
+                    // Check to see how it compares 
+                    if freq == map.num_docs {
+                        // In all docs - remove it from the map
+                        match map.remove(word.to_string()) {
+                            Some(()) => continue,
+                            None => panic!("Couldn't remove stop word"),
+                        }
+                    }
+                },
+                None => println!("Word not found in map - possibly removed earlier"),
+            }
+        }
+        
+        Ok(*map)
+    }
+
+    /// The function called every time a user-inputted search query is given
+    pub fn read_query(map: &Hashmap, query: &String) {
+
+    }
+
+    /// The function that does the final ranking of the documents based on the
+    /// given query
+    pub fn rank(map: &Hashmap, query: String) {
+
     }
 
 }
