@@ -2,7 +2,6 @@ mod structures {
     /// The hashmap struct for the document searching module. It holds information
     ///  about the number of words and documents currently tracked as well as the
     ///  actual hashtable itself
-    use std::mem::drop;
 
     #[derive(Debug)]
     pub struct Hashmap {
@@ -53,6 +52,7 @@ mod structures {
                     }
                     // Document not found - add a new document to the list for the word
                     node.documents.push(DocNode::new(doc));
+                    node.doc_freq += 1;
                     // Word added - no need to continue checking for the word
                     return;
                 }
@@ -77,27 +77,9 @@ mod structures {
             for node in self.table[index].iter_mut() {
                 // Compare each node's word to check if it matches
                 if node.word == word {
-                    // Since it's in a vector, can just drop the node here
-                    drop(node);
-                    // Check if there's another node past this one
-                    // First make sure this was not the end of the vector
-                    if internal_index >= self.table[index].capacity() {
-                        // Nothing beyond this - Just return early since no need
-                        //  to handle moving the rest of the vector over
-                        return Some(());
-                    }
-                    // Check to see whether or not there's another node in the list
-                    if self.table[index][internal_index + 1].word.len() != 0 {
-                        // There is a node still after the removed node. Iterate
-                        //  through the rest of the vector and move it over one
-                        // let mut i: usize = internal_index + 1;
-                        // while i < self.table[index].capacity() {
-                        //     // Move element over
-                        //     self.table[index][i - 1] = self.table[index][i - 1];
-                            
-                        //     i += 1;
-                        // }
-                    }
+                    // Since it's in a vector, can just use the remove method
+                    // It will handle moving everything over for us
+                    self.table[index].remove(internal_index);
                     // Removal done - return a success indication
                     self.words -= 1;
                     return Some(());
@@ -116,7 +98,7 @@ mod structures {
             let hashed_index = self.hash(&word.to_string());
 
             // Check to make sure that the list at the given index is valid
-            if self.table[hashed_index][0].word.len() == 0 {
+            if self.table[hashed_index].len() == 0 {
                 // Not allocated
                 return None;
             }
@@ -198,8 +180,6 @@ mod structures {
 
     /// Implementing the drop trait for the hashmap to allow the direct control
     /// over the memory operations for the sake of practice
-    /// This will be called when the struct goes out of scope at the end of the
-    /// destroy_map function
     impl Drop for Hashmap {
         fn drop(&mut self) {
             println!("Dropping the hashmap");
@@ -257,11 +237,14 @@ pub mod searching {
     use std::fs::read_dir;
 
     /// Struct to hold the list of files in use
+    #[derive(Debug)]
     struct FileInfo {
         file_name: String,
         search_result: f64,
     }
 
+    // Overall struct for tracking the setup of the program
+    #[derive(Debug)]
     pub struct Config {
         hashmap: Hashmap,
         file_list: Vec<FileInfo>,
@@ -330,16 +313,21 @@ pub mod searching {
             // Check to see what the doc frequency for this word is
             match config.hashmap.get_doc_freq(&word) {
                 Some(freq) => {
+                    println!("Doc Freq for {}: {}", word, freq);
+                    
                     // Check to see how it compares 
                     if freq == config.num_docs {
                         // In all docs - remove it from the map
                         match config.hashmap.remove(word.to_string()) {
-                            Some(()) => continue,
+                            Some(()) => {
+                                println!("Removed {}", word);
+                                continue;
+                            },
                             None => panic!("Couldn't remove stop word"),
                         }
                     }
                 },
-                None => println!("Word not found in map - possibly removed earlier"),
+                None => println!("{} not found in map - possibly removed earlier", word),
             }
         }
         
@@ -360,13 +348,15 @@ pub mod searching {
             match word_doc_freq {
                 Some(num) => {
                     // Present in some doc somewhere
-                    idf = ((config.num_docs / num) as f64).log10();
+                    idf = ((config.num_docs as f64 / num as f64) as f64).log10();
                 },
                 None => {
                     // Not present in any doc
                     idf = (config.num_docs as f64).log10();
                 },
             }
+
+            println!("idf for {}: {}", word, idf);
             // Iterate through the list of documents to get the necessary term
             //  frequency for each doc this word
             for doc in config.file_list.iter_mut() {
@@ -379,36 +369,19 @@ pub mod searching {
                         // Not found in this document - don't increase search 
                         //  ranking
                         // FUTURE: Update log.txt file to display messages
-                        println!("Search miss for word: {} -> {}", word, e);
+                        println!("Search miss for word in {}: {} -> {}", doc.file_name, word, e);
                     },
                 }
             }
         }
 
         // All words have been searched for now; Rank them accordingly         
-        // Just using a simple, but slow, selection sort
-        let mut result: Vec<&FileInfo> = vec![];
-        for i in 0..config.file_list.len() {
-            // Smallest
-            let mut largest_result = config.file_list[i].search_result;
-            let mut position = i;
-            for j in (i + 1)..config.file_list.len() {
-                // Check if larger than currently marked
-                if config.file_list[j].search_result > largest_result {
-                    // Mark the larger one
-                    largest_result = config.file_list[j].search_result;
-                    position = j;
-                }
-            }
-
-            // Push a reference to the largest into the new vec
-            result.push(&config.file_list[position]);
-        }
-
-        // Result has been sorted - write to output
-        // FUTURE: Write to output.txt as well to keep a running record
-        for doc in result.iter().enumerate() {
-            println!("{}) {}: {}", (doc.0 + 1), doc.1.file_name, doc.1.search_result);
+        config.file_list.sort_unstable_by(|j, k| j.search_result.partial_cmp(&k.search_result).unwrap());
+        
+        // Print the results out to the console - descending order means need
+        //  to start from back since sorted in ascending
+        for file in config.file_list.iter().rev().enumerate() {
+            println!("{}) {}: {}", file.0, file.1.file_name, file.1.search_result);
         }
 
         // To prepare for a future query: Wipe current results
