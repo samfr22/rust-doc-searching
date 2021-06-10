@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, process};
 
 use doc_search::searching;
 
@@ -17,24 +17,34 @@ fn main() {
         Err(_) => panic!("Invalid bucket input"),
     };
 
-    // Create the hashmap with the specified number of buckets
-    let mut words = Hashmap::new(num_buckets);
+    // Setup the 'engine'
+    match searching::setup(num_buckets) {
+        Ok(mut config) => {
+            // Setup successful - starting queries
+            loop {
+                // Get the user input for search queries
+                print!("Search query:\n>");
 
-    // Read in the subdirectory of text documents and set up the hashmap
+                io::stdin()
+                    .read_line(&mut input)
+                    .expect("Failed to read query");
 
-    loop {
-        // Get the user input for search queries and use searching functions from the library
-        print!("Search query:\n>");
+                let query: String = match input.trim().parse() {
+                    Ok(phrase) => phrase,
+                    Err(_) => panic!("Invalid query input"),
+                };
 
-        io::stdin()
-            .read_line(&mut input)
-            .expect("Failed to read query");
+                // Check if query is the exit command
+                if query == "x" || query == "X" {
+                    println!("Exiting...");
+                    // Hashmap will be dropped by the cleanup of the code
+                    process::exit(0);
+                }
 
-        let query: String = match input.trim().parse() {
-            Ok(phrase) => phrase,
-            Err(_) => panic!("Invalid query input"),
-        };
-
-        // Call the searching functions
+                // Otherwise, run the query through the ranking algorithm
+                searching::read_and_rank(&mut config, &query);
+            }
+        }, 
+        Err(e) => panic!("Error setting up: {}", e),
     }
 }

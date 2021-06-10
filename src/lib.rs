@@ -4,13 +4,12 @@ mod structures {
     ///  actual hashtable itself
     use std::mem::drop;
 
+    #[derive(Debug)]
     pub struct Hashmap {
         /// Number of buckets allocated for the map
         buckets: usize,
         /// Number of words currently in the hashmap
         words: u32,
-        /// Number of docs in use
-        pub num_docs: i32,
         /// The hashtable itself
         table: Vec<Vec<WordNode>>,
     }
@@ -19,12 +18,18 @@ mod structures {
         // Return a pointer to the allocated hashmap that has the number of 
         //  buckets specified by the user at run-time
         pub fn new(buckets: usize) -> Box<Hashmap> { 
-            Box::new(Hashmap {
+            let mut map = Box::new(Hashmap {
                 buckets,
                 words: 0,
-                num_docs: 0,
                 table: Vec::with_capacity(buckets),
-            })
+            });
+
+            // Push new 'lists' into each bucket
+            for _ in 0..buckets {
+                map.table.push(Vec::with_capacity(4));
+            }
+
+            map
         }
 
         /// The function for adding to the hashmap. If the given word is not present
@@ -131,7 +136,7 @@ mod structures {
 
         /// Gets the term frequency for a given word in a given document; This
         /// represents the number of times that the word appears in the doc
-        pub fn get_term_freq(&self, word: &str, doc: String) -> Result<i32, &'static str> { 
+        pub fn get_term_freq(&self, word: &str, doc: &str) -> Result<i32, &'static str> { 
             // Get the hash index for the given word
             let hashed_index = self.hash(&word.to_string());    
             
@@ -201,6 +206,7 @@ mod structures {
         }
     }
 
+    #[derive(Debug)]
     struct WordNode {
         // The tracked word
         word: String,
@@ -221,12 +227,13 @@ mod structures {
                 documents: Vec::with_capacity(4),
             };
 
-            node.documents[0] = DocNode::new(doc);
+            node.documents.push(DocNode::new(doc));
 
             node
         }
     }
 
+    #[derive(Debug)]
     struct DocNode {
         // The name of the document referencing the word
         document_name: String,
@@ -247,14 +254,31 @@ mod structures {
 pub mod searching {
     use super::structures::Hashmap;
 
-    use std::fs::{read_dir};
+    use std::fs::read_dir;
+
+    /// Struct to hold the list of files in use
+    struct FileInfo {
+        file_name: String,
+        search_result: f64,
+    }
+
+    pub struct Config {
+        hashmap: Hashmap,
+        file_list: Vec<FileInfo>,
+        num_docs: i32,
+    }
 
     /// Read a given directory of text files into the hashmap with a user
     /// defined number of buckets for a new Hashmap
-    pub fn setup(buckets: usize) -> std::io::Result<Hashmap> {
-        // Base setup of hashmap
-        let mut map = Hashmap::new(buckets);
-
+    pub fn setup(buckets: usize) -> std::io::Result<Config> {
+        
+        // Set up config struct
+        let mut config = Config {
+            hashmap: *Hashmap::new(buckets),
+            file_list: vec![],
+            num_docs: 0,
+        };
+        
         // For later
         let i = 0;
         let mut first_doc_contents = String::default();
@@ -283,11 +307,13 @@ pub mod searching {
                     for word in words.iter() {
                         // Need to clone file_name since the document isn't
                         // living long enough in the code to allow references
-                        map.add(word.to_string(), file_name.clone());
+                        config.hashmap.add(word.to_string(), file_name.clone());
                     }
 
                     // Update number of documents in map
-                    map.num_docs += 1;
+                    config.num_docs += 1;
+                    // Update list of files in config struct
+                    config.file_list.push(FileInfo {file_name: file_name.clone(), search_result: 0.0});
                 },
                 Err(_) => panic!("Error opening file in directory"),
             }
@@ -302,12 +328,12 @@ pub mod searching {
         let words: Vec<&str> = first_doc_contents.rsplit(' ').collect();
         for word in words.iter() {
             // Check to see what the doc frequency for this word is
-            match map.get_doc_freq(&word) {
+            match config.hashmap.get_doc_freq(&word) {
                 Some(freq) => {
                     // Check to see how it compares 
-                    if freq == map.num_docs {
+                    if freq == config.num_docs {
                         // In all docs - remove it from the map
-                        match map.remove(word.to_string()) {
+                        match config.hashmap.remove(word.to_string()) {
                             Some(()) => continue,
                             None => panic!("Couldn't remove stop word"),
                         }
@@ -317,18 +343,77 @@ pub mod searching {
             }
         }
         
-        Ok(*map)
+        Ok(config)
     }
 
     /// The function called every time a user-inputted search query is given
-    pub fn read_query(map: &Hashmap, query: &String) {
+    /// Basically breaks up the query into a list of words that can be used to
+    ///  give the final ranking for the given query
+    pub fn read_and_rank(config: &mut Config, query: &String) {
+        // Words separated
+        let query_words: Vec<&str> = query.rsplit(' ').collect();
 
+        // Iterate through the words in the query and check their frequencies
+        for word in query_words.iter() {
+            let word_doc_freq = config.hashmap.get_doc_freq(word);
+            let idf: f64;
+            match word_doc_freq {
+                Some(num) => {
+                    // Present in some doc somewhere
+                    idf = ((config.num_docs / num) as f64).log10();
+                },
+                None => {
+                    // Not present in any doc
+                    idf = (config.num_docs as f64).log10();
+                },
+            }
+            // Iterate through the list of documents to get the necessary term
+            //  frequency for each doc this word
+            for doc in config.file_list.iter_mut() {
+                match config.hashmap.get_term_freq(word, &doc.file_name) {
+                    Ok(freq) => {
+                        // Found
+                        doc.search_result += idf * (freq as f64);
+                    },
+                    Err(e) => {
+                        // Not found in this document - don't increase search 
+                        //  ranking
+                        // FUTURE: Update log.txt file to display messages
+                        println!("Search miss for word: {} -> {}", word, e);
+                    },
+                }
+            }
+        }
+
+        // All words have been searched for now; Rank them accordingly         
+        // Just using a simple, but slow, selection sort
+        let mut result: Vec<&FileInfo> = vec![];
+        for i in 0..config.file_list.len() {
+            // Smallest
+            let mut largest_result = config.file_list[i].search_result;
+            let mut position = i;
+            for j in (i + 1)..config.file_list.len() {
+                // Check if larger than currently marked
+                if config.file_list[j].search_result > largest_result {
+                    // Mark the larger one
+                    largest_result = config.file_list[j].search_result;
+                    position = j;
+                }
+            }
+
+            // Push a reference to the largest into the new vec
+            result.push(&config.file_list[position]);
+        }
+
+        // Result has been sorted - write to output
+        // FUTURE: Write to output.txt as well to keep a running record
+        for doc in result.iter().enumerate() {
+            println!("{}) {}: {}", (doc.0 + 1), doc.1.file_name, doc.1.search_result);
+        }
+
+        // To prepare for a future query: Wipe current results
+        for doc in config.file_list.iter_mut() {
+            doc.search_result = 0.0;
+        }
     }
-
-    /// The function that does the final ranking of the documents based on the
-    /// given query
-    pub fn rank(map: &Hashmap, query: String) {
-
-    }
-
 }
