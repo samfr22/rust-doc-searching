@@ -14,9 +14,9 @@ mod structures {
     }
 
     impl Hashmap {
-        // Return a pointer to the allocated hashmap that has the number of 
+        // Return a pointer to the allocated hashmap that has the number of
         //  buckets specified by the user at run-time
-        pub fn new(buckets: usize) -> Box<Hashmap> { 
+        pub fn new(buckets: usize) -> Box<Hashmap> {
             let mut map = Box::new(Hashmap {
                 buckets,
                 words: 0,
@@ -66,15 +66,14 @@ mod structures {
         /// The function for removing a word from the hashmap. When the word is
         /// found, the node is removed and the list adjusted to cover the hole if
         /// necessary. Once the node has been removed, the method returns
-        /// immediately. If there's an error at any point, an error message is 
+        /// immediately. If there's an error at any point, an error message is
         /// returned to the caller
         pub fn remove(&mut self, word: String) -> Option<()> {
             // Get the hash index for the word
             let index = self.hash(&word);
 
             // Iterate through the given list and check to see if it's there
-            let mut internal_index: usize = 0; // For tracking where the node is found
-            for node in self.table[index].iter_mut() {
+            for (internal_index, node) in self.table[index].iter_mut().enumerate() {
                 // Compare each node's word to check if it matches
                 if node.word == word {
                     // Since it's in a vector, can just use the remove method
@@ -84,7 +83,6 @@ mod structures {
                     self.words -= 1;
                     return Some(());
                 }
-                internal_index += 1;
             }
 
             // Node was not found - return error
@@ -98,7 +96,7 @@ mod structures {
             let hashed_index = self.hash(&word.to_string());
 
             // Check to make sure that the list at the given index is valid
-            if self.table[hashed_index].len() == 0 {
+            if self.table[hashed_index].is_empty() {
                 // Not allocated
                 return None;
             }
@@ -114,14 +112,14 @@ mod structures {
 
             // Could not find the word - return error
             None
-        }   
+        }
 
         /// Gets the term frequency for a given word in a given document; This
         /// represents the number of times that the word appears in the doc
-        pub fn get_term_freq(&self, word: &str, doc: &str) -> Result<i32, &'static str> { 
+        pub fn get_term_freq(&self, word: &str, doc: &str) -> Result<i32, &'static str> {
             // Get the hash index for the given word
-            let hashed_index = self.hash(&word.to_string());    
-            
+            let hashed_index = self.hash(&word.to_string());
+
             // Iterate through the given list and try and find the word
             for node in self.table[hashed_index].iter() {
                 if node.word == word {
@@ -144,10 +142,10 @@ mod structures {
         }
 
         /// Get the hashed index for a given word based on the capacity of the hashmap
-        /// For every character in the string, it will alternate between doing 
+        /// For every character in the string, it will alternate between doing
         /// multiplication or addition with a final division hash from
         /// the number of allocated buckets
-        fn hash(&self, word: &String) -> usize {
+        fn hash(&self, word: &str) -> usize {
             // The indicator for whether or not it's multiplication or division op
             // 0 -> Multiplication; 1 -> Division
             let mut op_variant: u8 = 0;
@@ -161,12 +159,12 @@ mod structures {
                         // Multiplication
                         hashed_index *= c as u64;
                         op_variant = 1;
-                    },
+                    }
                     1 => {
                         // Division
                         hashed_index += c as u64;
                         op_variant = 0;
-                    },
+                    }
                     _ => panic!("Unexpected value for hash operation"),
                 }
             }
@@ -255,14 +253,13 @@ pub mod searching {
     /// Read a given directory of text files into the hashmap with a user
     /// defined number of buckets for a new Hashmap
     pub fn setup(buckets: usize) -> std::io::Result<Config> {
-        
         // Set up config struct
         let mut config = Config {
             hashmap: *Hashmap::new(buckets),
             file_list: vec![],
             num_docs: 0,
         };
-        
+
         // For later
         let i = 0;
         let mut first_doc_contents = String::default();
@@ -270,7 +267,7 @@ pub mod searching {
         // Iterate through the docs in the given directory
         for doc in read_dir("./docs")? {
             match doc {
-                Ok(entry) => {              
+                Ok(entry) => {
                     let file_name = match entry.file_name().into_string() {
                         Ok(str) => str,
                         Err(_) => panic!("Couldn't convert file name into usable string"),
@@ -297,8 +294,11 @@ pub mod searching {
                     // Update number of documents in map
                     config.num_docs += 1;
                     // Update list of files in config struct
-                    config.file_list.push(FileInfo {file_name: file_name.clone(), search_result: 0.0});
-                },
+                    config.file_list.push(FileInfo {
+                        file_name: file_name.clone(),
+                        search_result: 0.0,
+                    });
+                }
                 Err(_) => panic!("Error opening file in directory"),
             }
         }
@@ -308,13 +308,13 @@ pub mod searching {
         //  in this file; Truncate to wipe a previous iteration of program
         let mut log_writer = BufWriter::new(
             OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open("log.txt")?
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open("log.txt")?,
         );
 
-        // All words from all the text files have been added - now clean up 
+        // All words from all the text files have been added - now clean up
         //  stop words that are too common and would mess up the rankings
 
         // For now, the simple solution is to just remove the words that are
@@ -327,8 +327,8 @@ pub mod searching {
                 Some(freq) => {
                     let mut log_string = format!("Doc Freq for {}: {}\n", word, freq);
                     log_writer.write_all(log_string.as_bytes())?;
-                    
-                    // Check to see how it compares 
+
+                    // Check to see how it compares
                     if freq == config.num_docs {
                         // In all docs - remove it from the map
                         match config.hashmap.remove(word.to_string()) {
@@ -336,35 +336,32 @@ pub mod searching {
                                 log_string = format!("Removed {}\n", word);
                                 log_writer.write_all(log_string.as_bytes())?;
                                 continue;
-                            },
+                            }
                             None => panic!("Couldn't remove stop word"),
                         }
                     }
-                },
-                None => { 
-                    let log_string = format!("{} not found in map - possibly removed earlier\n", word);
+                }
+                None => {
+                    let log_string =
+                        format!("{} not found in map - possibly removed earlier\n", word);
                     log_writer.write_all(log_string.as_bytes())?;
-                }   
+                }
             }
         }
-        
+
         Ok(config)
     }
 
     /// The function called every time a user-inputted search query is given
     /// Basically breaks up the query into a list of words that can be used to
     ///  give the final ranking for the given query
-    pub fn read_and_rank(config: &mut Config, query: &String) -> std::io::Result<()> {
+    pub fn read_and_rank(config: &mut Config, query: &str) -> std::io::Result<()> {
         // Words separated
         let query_words: Vec<&str> = query.rsplit(' ').collect();
-        
+
         // Open log and writer once to avoid having to deal with opening multiple times
-        let mut log_writer = BufWriter::new(
-        OpenOptions::new()
-            .append(true)
-            .open("log.txt")?
-        );
-    
+        let mut log_writer = BufWriter::new(OpenOptions::new().append(true).open("log.txt")?);
+
         // Iterate through the words in the query and check their frequencies
         for word in query_words.iter() {
             let word_doc_freq = config.hashmap.get_doc_freq(word);
@@ -373,11 +370,11 @@ pub mod searching {
                 Some(num) => {
                     // Present in some doc somewhere
                     idf = ((config.num_docs as f64 / num as f64) as f64).log10();
-                },
+                }
                 None => {
                     // Not present in any doc
                     idf = (config.num_docs as f64).log10();
-                },
+                }
             }
 
             // Write idf freq for each search word
@@ -390,25 +387,30 @@ pub mod searching {
                     Ok(freq) => {
                         // Found
                         doc.search_result += idf * (freq as f64);
-                    },
+                    }
                     Err(e) => {
-                        // Not found in this document - don't increase search 
+                        // Not found in this document - don't increase search
                         //  ranking
-                        let log_string = format!("Search miss for word in {}: {} -> {}\n", doc.file_name, word, e);
+                        let log_string = format!(
+                            "Search miss for word in {}: {} -> {}\n",
+                            doc.file_name, word, e
+                        );
                         log_writer.write_all(log_string.as_bytes())?;
-                    },
+                    }
                 }
             }
         }
 
-        // All words have been searched for now; Rank them accordingly         
-        config.file_list.sort_unstable_by(|j, k| j.search_result.partial_cmp(&k.search_result).unwrap());
-        
+        // All words have been searched for now; Rank them accordingly
+        config
+            .file_list
+            .sort_unstable_by(|j, k| j.search_result.partial_cmp(&k.search_result).unwrap());
+
         let mut output_writer = BufWriter::new(
-        OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open("search_scores.txt")?
+            OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open("search_scores.txt")?,
         );
 
         output_writer.write_all(format!("{}:\n", query).as_bytes())?;
@@ -416,11 +418,24 @@ pub mod searching {
         // Print the results out to the console - descending order means need
         //  to start from back since sorted in ascending
         for file in config.file_list.iter().rev().enumerate() {
-            println!("{}) {}: {}", (file.0 + 1), file.1.file_name, file.1.search_result);
-            output_writer.write_all(format!("{}) {}: {}\n", (file.0 + 1), file.1.file_name, file.1.search_result).as_bytes())?;
+            println!(
+                "{}) {}: {}",
+                (file.0 + 1),
+                file.1.file_name,
+                file.1.search_result
+            );
+            output_writer.write_all(
+                format!(
+                    "{}) {}: {}\n",
+                    (file.0 + 1),
+                    file.1.file_name,
+                    file.1.search_result
+                )
+                .as_bytes(),
+            )?;
         }
 
-        output_writer.write("\n\n".as_bytes())?;
+        output_writer.write_all("\n\n".as_bytes())?;
 
         // To prepare for a future query: Wipe current results
         for doc in config.file_list.iter_mut() {

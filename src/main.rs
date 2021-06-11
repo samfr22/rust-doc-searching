@@ -1,5 +1,5 @@
-use std::{io, process};
 use std::mem::drop;
+use std::{io, process};
 
 use doc_search::searching;
 
@@ -24,7 +24,7 @@ fn main() {
             // Setup successful - starting queries
             loop {
                 // Get the user input for search queries
-                print!("Search query:\n");
+                println!("Search query:");
 
                 let mut user_in = String::new();
 
@@ -52,7 +52,7 @@ fn main() {
                     Err(e) => panic!("Error in ranking: {}", e),
                 }
             }
-        }, 
+        }
         Err(e) => panic!("Error setting up: {}", e),
     }
 }
