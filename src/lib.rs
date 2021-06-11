@@ -167,7 +167,7 @@ mod structures {
                         hashed_index += c as u64;
                         op_variant = 0;
                     },
-                    _ => panic!("Unexpected value"),
+                    _ => panic!("Unexpected value for hash operation"),
                 }
             }
             // Once finished iterating over the characters, do a final modulus with
@@ -234,7 +234,8 @@ mod structures {
 pub mod searching {
     use super::structures::Hashmap;
 
-    use std::fs::read_dir;
+    use std::fs::{read_dir, OpenOptions};
+    use std::io::{BufWriter, Write};
 
     /// Struct to hold the list of files in use
     #[derive(Debug)]
@@ -302,6 +303,17 @@ pub mod searching {
             }
         }
 
+        // Set up the log file to make it accessible for future operations
+        // All error messages and logistics of things being dropped will be put
+        //  in this file; Truncate to wipe a previous iteration of program
+        let mut log_writer = BufWriter::new(
+            OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open("log.txt")?
+        );
+
         // All words from all the text files have been added - now clean up 
         //  stop words that are too common and would mess up the rankings
 
@@ -313,21 +325,26 @@ pub mod searching {
             // Check to see what the doc frequency for this word is
             match config.hashmap.get_doc_freq(&word) {
                 Some(freq) => {
-                    println!("Doc Freq for {}: {}", word, freq);
+                    let mut log_string = format!("Doc Freq for {}: {}\n", word, freq);
+                    log_writer.write_all(log_string.as_bytes())?;
                     
                     // Check to see how it compares 
                     if freq == config.num_docs {
                         // In all docs - remove it from the map
                         match config.hashmap.remove(word.to_string()) {
                             Some(()) => {
-                                println!("Removed {}", word);
+                                log_string = format!("Removed {}\n", word);
+                                log_writer.write_all(log_string.as_bytes())?;
                                 continue;
                             },
                             None => panic!("Couldn't remove stop word"),
                         }
                     }
                 },
-                None => println!("{} not found in map - possibly removed earlier", word),
+                None => { 
+                    let log_string = format!("{} not found in map - possibly removed earlier\n", word);
+                    log_writer.write_all(log_string.as_bytes())?;
+                }   
             }
         }
         
@@ -337,10 +354,17 @@ pub mod searching {
     /// The function called every time a user-inputted search query is given
     /// Basically breaks up the query into a list of words that can be used to
     ///  give the final ranking for the given query
-    pub fn read_and_rank(config: &mut Config, query: &String) {
+    pub fn read_and_rank(config: &mut Config, query: &String) -> std::io::Result<()> {
         // Words separated
         let query_words: Vec<&str> = query.rsplit(' ').collect();
-
+        
+        // Open log and writer once to avoid having to deal with opening multiple times
+        let mut log_writer = BufWriter::new(
+        OpenOptions::new()
+            .append(true)
+            .open("log.txt")?
+        );
+    
         // Iterate through the words in the query and check their frequencies
         for word in query_words.iter() {
             let word_doc_freq = config.hashmap.get_doc_freq(word);
@@ -356,7 +380,9 @@ pub mod searching {
                 },
             }
 
-            println!("idf for {}: {}", word, idf);
+            // Write idf freq for each search word
+            log_writer.write_all(format!("idf for {}: {}\n", word, idf).as_bytes())?;
+
             // Iterate through the list of documents to get the necessary term
             //  frequency for each doc this word
             for doc in config.file_list.iter_mut() {
@@ -368,8 +394,8 @@ pub mod searching {
                     Err(e) => {
                         // Not found in this document - don't increase search 
                         //  ranking
-                        // FUTURE: Update log.txt file to display messages
-                        println!("Search miss for word in {}: {} -> {}", doc.file_name, word, e);
+                        let log_string = format!("Search miss for word in {}: {} -> {}\n", doc.file_name, word, e);
+                        log_writer.write_all(log_string.as_bytes())?;
                     },
                 }
             }
@@ -378,15 +404,29 @@ pub mod searching {
         // All words have been searched for now; Rank them accordingly         
         config.file_list.sort_unstable_by(|j, k| j.search_result.partial_cmp(&k.search_result).unwrap());
         
+        let mut output_writer = BufWriter::new(
+        OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("search_scores.txt")?
+        );
+
+        output_writer.write_all(format!("{}:\n", query).as_bytes())?;
+
         // Print the results out to the console - descending order means need
         //  to start from back since sorted in ascending
         for file in config.file_list.iter().rev().enumerate() {
-            println!("{}) {}: {}", file.0, file.1.file_name, file.1.search_result);
+            println!("{}) {}: {}", (file.0 + 1), file.1.file_name, file.1.search_result);
+            output_writer.write_all(format!("{}) {}: {}\n", (file.0 + 1), file.1.file_name, file.1.search_result).as_bytes())?;
         }
+
+        output_writer.write("\n\n".as_bytes())?;
 
         // To prepare for a future query: Wipe current results
         for doc in config.file_list.iter_mut() {
             doc.search_result = 0.0;
         }
+
+        Ok(())
     }
 }

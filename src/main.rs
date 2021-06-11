@@ -41,12 +41,16 @@ fn main() {
                 if query == "x" || query == "X" {
                     println!("Exiting...");
                     drop(config);
+                    println!("Total output can be seen in search_scores.txt file");
                     // Hashmap will be dropped by the cleanup of the code
                     process::exit(0);
                 }
 
                 // Otherwise, run the query through the ranking algorithm
-                searching::read_and_rank(&mut config, &query);
+                match searching::read_and_rank(&mut config, &query) {
+                    Ok(()) => continue,
+                    Err(e) => panic!("Error in ranking: {}", e),
+                }
             }
         }, 
         Err(e) => panic!("Error setting up: {}", e),
