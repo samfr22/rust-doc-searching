@@ -1,4 +1,4 @@
-# rust-doc-searching
+# text-doc-search
 Searches a subdirectory of text documents for the most relevant docs based on a search query
 
 Based on a project previously completed in C for CS 2461 - Computer Architecture I.
